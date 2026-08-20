@@ -1,0 +1,52 @@
+[
+  {
+    "doc_a": "hr_handbook_2019.txt",
+    "doc_b": "hr_hybrid_policy_2024.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hr_leave_policy_2020.txt",
+    "doc_b": "hr_leave_policy_2023.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hr_expense_policy_2021.txt",
+    "doc_b": "hr_expense_policy_2024.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hr_probation_policy_2019.txt",
+    "doc_b": "hr_probation_policy_2023.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hc_dosage_guideline_2020.txt",
+    "doc_b": "hc_dosage_protocol_2023.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hc_discharge_protocol_2019.txt",
+    "doc_b": "hc_discharge_protocol_2022.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hc_visiting_hours_2021.txt",
+    "doc_b": "hc_visiting_hours_2024.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hc_fasting_guideline_2020.txt",
+    "doc_b": "hc_fasting_guideline_2023.txt",
+    "label": "contradiction"
+  },
+  {
+    "doc_a": "hr_dress_code_2018.txt",
+    "doc_b": "hr_onboarding_guide_2022.txt",
+    "label": "no_conflict"
+  },
+  {
+    "doc_a": "hc_infection_control_2020.txt",
+    "doc_b": "hc_staff_training_2022.txt",
+    "label": "no_conflict"
+  }
+]

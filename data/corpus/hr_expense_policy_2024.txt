@@ -1,0 +1,5 @@
+TITLE: Expense Reimbursement Policy - Update
+SOURCE: Expense Policy 2024 Update
+DATE: 2024-05-01
+
+All expense claims must be submitted within 60 days of the purchase date. This extends the previous window to reduce missed reimbursements.
