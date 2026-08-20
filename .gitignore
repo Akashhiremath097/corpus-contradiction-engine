@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+*.faiss
+*.index
+venv/
+.venv/
+data/embeddings/
