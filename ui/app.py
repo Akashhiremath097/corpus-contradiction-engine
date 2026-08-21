@@ -35,6 +35,27 @@ def severity_badge(score: float) -> str:
         return "🟡 Low"
 
 
+def highlight_span(text: str, span: str) -> str:
+    """
+    Wraps the first case-insensitive occurrence of `span` inside `text` in
+    markdown bold, so Streamlit renders it visually highlighted within the
+    full claim sentence — e.g. "The standard adult dose of Medazol is
+    **500mg**." instead of just showing the whole sentence undifferentiated.
+
+    Graceful fallback: if span is empty (label wasn't "contradiction", or
+    entailment.py's own verbatim check already discarded a hallucinated
+    span) or genuinely isn't found in text, returns text unchanged rather
+    than raising — a missing highlight should never break the page.
+    """
+    if not span:
+        return text
+    idx = text.lower().find(span.lower())
+    if idx == -1:
+        return text
+    end = idx + len(span)
+    return text[:idx] + "**" + text[idx:end] + "**" + text[end:]
+
+
 def fetch_status() -> dict:
     resp = requests.get(f"{API_BASE}/status", timeout=10)
     resp.raise_for_status()
@@ -47,8 +68,27 @@ def fetch_conflicts() -> list[dict]:
     return resp.json()["conflicts"]
 
 
-def start_ingestion() -> dict:
-    resp = requests.post(f"{API_BASE}/ingest", timeout=10)
+def start_ingestion(source: str = "seeded", fallback_date: str = None) -> dict:
+    params = {"source": source}
+    if fallback_date:
+        params["fallback_date"] = fallback_date
+    resp = requests.post(f"{API_BASE}/ingest", params=params, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def upload_documents(uploaded_files) -> dict:
+    """
+    Sends one or more Streamlit UploadedFile objects to POST /upload.
+    requests' `files` param expects (fieldname, (filename, content_bytes,
+    mimetype)) tuples — Streamlit's UploadedFile already gives us the
+    filename and raw bytes via .getvalue(), so this is just reshaping.
+    """
+    files_payload = [
+        ("files", (f.name, f.getvalue(), "text/plain"))
+        for f in uploaded_files
+    ]
+    resp = requests.post(f"{API_BASE}/upload", files=files_payload, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -85,9 +125,9 @@ def render_detail_view(conflict: dict):
         result = cp["result"]
         col_a, col_b = st.columns(2)
         with col_a:
-            st.info(result["claim_a"]["text"])
+            st.info(highlight_span(result["claim_a"]["text"], result.get("conflicting_span_a", "")))
         with col_b:
-            st.warning(result["claim_b"]["text"])
+            st.warning(highlight_span(result["claim_b"]["text"], result.get("conflicting_span_b", "")))
         st.caption(
             f"Model reasoning: {result['reasoning']} "
             f"(confidence: {result['confidence']:.0%})"
@@ -137,8 +177,45 @@ def render_ingestion_progress():
 
     if status["status"] == "idle":
         st.info("No data loaded yet.")
+
+        source_choice = st.radio(
+            "What should be checked for contradictions?",
+            options=["Seeded demo corpus", "My own uploaded documents", "Both"],
+            help=(
+                "Uploading your own documents replaces any previous upload. "
+                "Files without a recognized date will use the date you set below — "
+                "accurate dates matter for how conflicts get ranked by severity."
+            ),
+        )
+
+        uploaded_files = None
+        fallback_date_str = None
+        if source_choice in ("My own uploaded documents", "Both"):
+            uploaded_files = st.file_uploader(
+                "Upload .txt documents", type=["txt"], accept_multiple_files=True
+            )
+            fallback_date = st.date_input(
+                "Date to use for uploaded documents without a detected date",
+                help="This affects recency-gap severity scoring — set it to the document's real date if you know it.",
+            )
+            fallback_date_str = fallback_date.isoformat()
+
         if st.button("Run contradiction detection"):
-            start_ingestion()
+            source_map = {
+                "Seeded demo corpus": "seeded",
+                "My own uploaded documents": "uploaded",
+                "Both": "both",
+            }
+            source = source_map[source_choice]
+
+            if source in ("uploaded", "both"):
+                if not uploaded_files:
+                    st.warning("Please upload at least one .txt file first.")
+                    return
+                with st.spinner("Uploading documents..."):
+                    upload_documents(uploaded_files)
+
+            start_ingestion(source=source, fallback_date=fallback_date_str)
             st.rerun()
         return
 

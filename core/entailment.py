@@ -26,8 +26,10 @@ Classify the relationship between Claim A and Claim B as exactly one of:
 
 Be careful: two claims about the same TOPIC are not automatically a contradiction. Only classify as "contradiction" if they genuinely cannot both be true — e.g. different numbers for the same specific rule, or directly opposing requirements. A claim that adds detail or context to another, without conflicting, is "entailment" or "neutral", not "contradiction".
 
+If the label is "contradiction", also identify the SHORTEST exact substring from each claim that captures the actual point of disagreement — e.g. just "500mg" and "250 mg administered twice daily", not the whole sentence. These must be copied VERBATIM, character-for-character, from the claim text given above — do not paraphrase or fix formatting. If the label is not "contradiction", leave both span fields as empty strings.
+
 Respond with ONLY a JSON object in this exact form, nothing else. No markdown fences, no preamble.
-{{"label": "contradiction" | "entailment" | "neutral", "confidence": <0.0 to 1.0>, "reasoning": "<one brief sentence>"}}"""
+{{"label": "contradiction" | "entailment" | "neutral", "confidence": <0.0 to 1.0>, "reasoning": "<one brief sentence>", "conflicting_span_a": "<verbatim substring of Claim A, or empty string>", "conflicting_span_b": "<verbatim substring of Claim B, or empty string>"}}"""
 
 
 @dataclass
@@ -38,6 +40,8 @@ class EntailmentResult:
     confidence: float
     reasoning: str
     similarity: float  # carried over from candidate pairing — used later in severity scoring
+    conflicting_span_a: str = ""  # verbatim substring of claim_a.text pinpointing the conflict, if label == "contradiction"
+    conflicting_span_b: str = ""  # verbatim substring of claim_b.text, same purpose
 
 
 def classify_pair(claim_a: Claim, claim_b: Claim, similarity: float) -> EntailmentResult:
@@ -64,6 +68,8 @@ def classify_pair(claim_a: Claim, claim_b: Claim, similarity: float) -> Entailme
         label = parsed["label"]
         confidence = float(parsed["confidence"])
         reasoning = parsed.get("reasoning", "")
+        span_a = parsed.get("conflicting_span_a", "")
+        span_b = parsed.get("conflicting_span_b", "")
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         raise ValueError(
             f"Model returned unparseable entailment response for "
@@ -77,6 +83,18 @@ def classify_pair(claim_a: Claim, claim_b: Claim, similarity: float) -> Entailme
         # crashing the whole pipeline over one bad response.
         label = "neutral"
 
+    # Verbatim check: the model is asked for an exact substring, but LLMs
+    # sometimes paraphrase or fix punctuation even when told not to. A
+    # span that isn't actually IN the source text can't be highlighted
+    # meaningfully, so it's discarded here rather than passed downstream
+    # for the UI to fail on — the UI's highlight function does its own
+    # verbatim check too, but catching it here means EntailmentResult
+    # never claims to have a span it can't actually back up.
+    if span_a and span_a.lower() not in claim_a.text.lower():
+        span_a = ""
+    if span_b and span_b.lower() not in claim_b.text.lower():
+        span_b = ""
+
     return EntailmentResult(
         claim_a=claim_a,
         claim_b=claim_b,
@@ -84,6 +102,8 @@ def classify_pair(claim_a: Claim, claim_b: Claim, similarity: float) -> Entailme
         confidence=confidence,
         reasoning=reasoning,
         similarity=similarity,
+        conflicting_span_a=span_a,
+        conflicting_span_b=span_b,
     )
 
 
