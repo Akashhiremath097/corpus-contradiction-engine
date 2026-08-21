@@ -7,4 +7,13 @@ groq
 python-dotenv
 pydantic
 requests
+
+# CPU-only torch build. Standard PyPI torch on Linux pulls in CUDA/cuDNN
+# libraries by default, which get loaded into memory even on a host with
+# no GPU (like Render's free tier) — this can add a meaningful chunk of
+# memory for libraries that are never actually used. --extra-index-url
+# points pip at PyTorch's own CPU-only wheel index; per PyTorch's official
+# install docs (pytorch.org/get-started), this is the standard way to
+# avoid the CUDA build on a CPU-only deployment.
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch

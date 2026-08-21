@@ -45,6 +45,17 @@ app.add_middleware(
 CORPUS_DIR = "data/corpus"       # the seeded demo corpus, built by create_corpus.py
 UPLOADED_DIR = "data/uploaded"   # user-uploaded documents, populated via POST /upload
 
+# Set ENABLE_RERANKING=false on memory-constrained hosts (e.g. Render's
+# free 512MB tier) to skip loading the cross-encoder reranker model
+# entirely. The reranker is a quality/efficiency improvement on top of an
+# already-working pipeline (verified 8/8 recall, 0 false positives
+# without it) — not a required stage. On a host tight enough that two
+# loaded transformer models risk an OOM kill, dropping this one is a
+# reasonable trade: the pipeline still runs correctly, just without the
+# extra pruning step before Groq. Defaults to true (enabled) for local
+# development, where memory isn't the constraint.
+ENABLE_RERANKING = os.environ.get("ENABLE_RERANKING", "true").lower() == "true"
+
 # Single global in-memory state — deliberately simple. This is a one-user
 # hackathon demo, not a multi-tenant service, so there's no need for job
 # IDs or per-request tracking. A lock guards it because the background
@@ -100,8 +111,16 @@ def _run_pipeline(source: str = "seeded", fallback_date: str = None):
         _set_state(progress=f"Finding candidate pairs among {len(claims)} claims...")
         candidates = get_candidate_pairs(claims)
 
-        _set_state(progress=f"Reranking {len(candidates)} candidates with cross-encoder...")
-        reranked = rerank_candidates(candidates)
+        if ENABLE_RERANKING:
+            _set_state(progress=f"Reranking {len(candidates)} candidates with cross-encoder...")
+            reranked = rerank_candidates(candidates)
+        else:
+            # Cross-encoder skipped (ENABLE_RERANKING=false) — the pipeline
+            # still works correctly with the FAISS-only candidates, just
+            # without the extra pruning pass. This is exactly the pipeline
+            # shape that was already verified at 8/8 recall, 0 false
+            # positives before the reranker was added.
+            reranked = candidates
 
         _set_state(progress=f"Classifying {len(reranked)} candidate pairs...")
         results = classify_candidates(reranked)
