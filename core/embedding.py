@@ -11,7 +11,6 @@ import os
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 from core.ingestion import Chunk
 
@@ -27,15 +26,27 @@ MAPPING_PATH = os.path.join("data", "index", "chunk_mapping.json")
 _model = None  # lazy-loaded singleton — see note below
 
 
-def get_model() -> SentenceTransformer:
+def get_model():
     """
     Loads the embedding model once and reuses it. Loading a SentenceTransformer
     is not free (~1-2s plus the one-time download), so a module-level singleton
     avoids reloading it on every function call — this matters once the API
     server is handling multiple requests.
+
+    The import itself is INSIDE this function, not at the top of the file.
+    sentence-transformers pulls in torch, which is memory-heavy to import
+    even before any model is loaded. On a memory-constrained host (e.g.
+    Render's free 512MB tier), importing it unconditionally at module load
+    time — which happens the instant uvicorn starts, before the server can
+    even bind to a port — can push the process over its memory limit and
+    get it silently killed before it ever finishes booting. Deferring the
+    import to first actual use means the bare FastAPI process has a small
+    footprint at startup, and the heavy load only happens when a real
+    ingestion run needs it.
     """
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(MODEL_NAME)
     return _model
 
