@@ -1,0 +1,25 @@
+# Render Blueprint — lets Render auto-configure the backend service from
+# this file instead of manually clicking through dashboard settings.
+# Used via: Render dashboard -> New -> Blueprint -> point at this repo.
+#
+# GROQ_API_KEY is deliberately NOT set here — secrets never belong in a
+# committed file, even one that only configures infrastructure. It's set
+# once, manually, in the Render dashboard after this blueprint creates
+# the service (Environment tab -> Add Environment Variable).
+
+services:
+  - type: web
+    name: corpus-contradiction-engine-api
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    # --host 0.0.0.0 is required — uvicorn's default (127.0.0.1 / localhost)
+    # only accepts connections from the same machine, which is meaningless
+    # on a cloud host where the actual traffic arrives from Render's proxy,
+    # not from inside the container itself.
+    # $PORT is injected by Render at runtime; the app must bind to whatever
+    # port Render assigns, not a hardcoded 8000.
+    startCommand: "python -m uvicorn api.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
