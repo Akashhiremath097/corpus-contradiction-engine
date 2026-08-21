@@ -6,3 +6,5 @@ sentence-transformers
 groq
 python-dotenv
 pydantic
+requests
+torch

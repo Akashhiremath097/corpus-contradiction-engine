@@ -8,12 +8,24 @@ side with dates and the model's reasoning, mirroring the deck's slide 3
 "both sources shown, reader decides" presentation.
 """
 
+import os
 import time
 
 import requests
 import streamlit as st
 
-API_BASE = "http://localhost:8000"
+# API_BASE resolves in priority order:
+# 1. Streamlit secrets (set on Streamlit Cloud via the app's Settings -> Secrets)
+# 2. an environment variable (useful for local testing against a deployed backend)
+# 3. localhost, for local development with both servers on the same machine
+#
+# This one line is what makes the SAME code run locally during development
+# and in production once deployed — nothing else in this file needs to
+# know or care where the API actually lives.
+try:
+    API_BASE = st.secrets["API_BASE"]
+except (KeyError, FileNotFoundError):
+    API_BASE = os.environ.get("API_BASE", "http://localhost:8000")
 
 st.set_page_config(page_title="Corpus Contradiction Engine", layout="wide")
 
