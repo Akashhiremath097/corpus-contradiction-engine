@@ -11,8 +11,11 @@ This is the first of two Groq-backed stages (the second is entailment.py).
 
 import json
 import os
+import re
+import time
 from dataclasses import dataclass
 
+import groq
 from dotenv import load_dotenv
 from groq import Groq
 
@@ -21,6 +24,8 @@ from core.ingestion import Chunk
 load_dotenv()  # reads .env into environment variables — this is what keeps
                 # the API key out of source code and out of git entirely
 
+# openai/gpt-oss-120b replaces llama-3.3-70b-versatile, which Groq
+# deprecated (email sent June 17, 2026; shut off for free/dev tier accounts).
 GROQ_MODEL = "openai/gpt-oss-120b"
 
 _client = None
@@ -42,6 +47,55 @@ def get_client() -> Groq:
             )
         _client = Groq(api_key=api_key)
     return _client
+
+
+def _extract_retry_seconds(error_message: str) -> float | None:
+    """
+    Groq's rate-limit error messages include their own suggested wait time,
+    e.g. "Please try again in 659.999999ms." — parsing that out means we
+    wait exactly as long as Groq says is needed, rather than guessing with
+    a fixed or exponential delay that might be too short (fails again
+    immediately) or too long (wastes time we don't have during a hackathon).
+    """
+    match = re.search(r"try again in ([\d.]+)ms", error_message)
+    if match:
+        return float(match.group(1)) / 1000.0
+    match = re.search(r"try again in ([\d.]+)s", error_message)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def call_groq_with_retry(messages: list[dict], temperature: float = 0.1, max_retries: int = 5):
+    """
+    Shared wrapper for every Groq call in the pipeline (used by both
+    claim_extraction.py and entailment.py). Free/dev-tier accounts have a
+    tokens-per-minute cap that a ~50-call pipeline run can hit, especially
+    after several full runs in the same session (exactly what happened
+    during testing). Rather than letting one transient 429 kill the entire
+    background thread and surface as a dead-end error to the user, this
+    catches RateLimitError, waits the time Groq itself suggests (falling
+    back to exponential backoff if that's not parseable), and retries.
+    """
+    client = get_client()
+    for attempt in range(max_retries):
+        try:
+            return client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=messages,
+                temperature=temperature,
+            )
+        except groq.RateLimitError as e:
+            wait = _extract_retry_seconds(str(e))
+            if wait is None:
+                wait = 2 ** attempt  # exponential fallback if we can't parse Groq's suggestion
+            wait = min(wait + 0.2, 30)  # small safety buffer, capped so we never wait absurdly long
+            print(f"  Rate limited (attempt {attempt + 1}/{max_retries}), waiting {wait:.1f}s...")
+            time.sleep(wait)
+    raise RuntimeError(
+        f"Exceeded {max_retries} retries due to Groq rate limiting. "
+        f"Wait a minute for the tokens-per-minute window to reset, then try again."
+    )
 
 
 @dataclass
@@ -94,11 +148,9 @@ def extract_claims_from_chunk(chunk: Chunk) -> list[Claim]:
     specific numbers (500mg, 3 days, 24 hours) preserved exactly for the
     entailment step to catch contradictions correctly.
     """
-    client = get_client()
     prompt = EXTRACTION_PROMPT.format(text=chunk.text)
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
+    response = call_groq_with_retry(
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
     )

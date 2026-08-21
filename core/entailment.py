@@ -10,7 +10,7 @@ import json
 from groq import Groq
 from dataclasses import dataclass
 
-from core.claim_extraction import Claim, get_client, GROQ_MODEL, _strip_markdown_fences
+from core.claim_extraction import Claim, call_groq_with_retry, _strip_markdown_fences
 
 VALID_LABELS = {"contradiction", "entailment", "neutral"}
 
@@ -46,14 +46,12 @@ def classify_pair(claim_a: Claim, claim_b: Claim, similarity: float) -> Entailme
     as claim extraction: this is a classification task, not a creative one,
     and low temperature keeps the label consistent if you rerun the pipeline.
     """
-    client = get_client()
     prompt = ENTAILMENT_PROMPT.format(
         source_a=claim_a.source, date_a=claim_a.date, text_a=claim_a.text,
         source_b=claim_b.source, date_b=claim_b.date, text_b=claim_b.text,
     )
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
+    response = call_groq_with_retry(
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
     )
